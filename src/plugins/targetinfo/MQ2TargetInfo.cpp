@@ -17,10 +17,11 @@
 // 2.2 Added fix from dannuic/knightly to stop clearing target when using hotbuttons.
 // 2.3 Added a fix for stopping movement by Freezerburn26
 // 2.4 FelisMalum: Moved allot of configuration to INI + added some additional, added distance variables/color, updated INI.
+// 2.5 FelisMalum: Added true name element & settings. Moved PHButton loc settings to INI. Added feedback when changing settings.
 
 // TODO: Update for zone checking since the info is in the file (requires switching storage or map key)
-// TODO: Move 2nd aggro%/name to ini. Add true name?. Possible label variables?
-// TODO: Cleanup ph loading, no need to load entire file on load or hardcode npc, show rare name on tooltip.
+// TODO: Move 2nd aggro%/name to ini. Possible label variables?
+// TODO: Cleanup ph loading, no need to load entire file on load or hardcode npc.
 
 #include <mq/Plugin.h>
 #include "resource.h"
@@ -30,7 +31,7 @@
 #include <string>
 
 PreSetup("MQ2TargetInfo");
-PLUGIN_VERSION(2.4);
+PLUGIN_VERSION(2.5);
 
 enum class eINIOptions
 {
@@ -43,6 +44,7 @@ std::recursive_mutex s_mutex;
 
 std::string DistanceLabelToolTip = "Target Distance";
 char szTargetInfo[128] = { "Target Info" };
+char szTrueName[128] = { "True Name" };
 char szCanSeeTarget[128] = { "Can See Target" };
 char szPHToolTip[128] = { "Target is a Place Holder" };
 char szPH[128] = { "PH" };
@@ -50,6 +52,7 @@ char szPH[128] = { "PH" };
 SPAWNINFO* oldspawn = nullptr;
 
 CLabelWnd* InfoLabel = nullptr;
+CLabelWnd* NameLabel = nullptr;
 CLabelWnd* DistanceLabel = nullptr;
 CLabelWnd* CanSeeLabel = nullptr;
 
@@ -71,8 +74,12 @@ std::string ManaLabelName = "Player_ManaLabel";
 std::string FatigueLabelName = "Player_FatigueLabel";
 std::string TargetInfoLoc = "34,48,0,40";
 MQColor TargetInfoColor = MQColor(0, 255, 0);
+std::string TargetTrueNameLoc = "47,61,0,40";
+MQColor TargetTrueNameColor = MQColor(0, 255, 0);
 std::string TargetDistanceLoc = "34,48,90,0";
+
 std::string CanSeeIndicatorLoc = "47,61,50,0";
+std::string PHButtonLoc = "48,59,0,0";
 /* End multiple location defaults */
 
 int Target_AggroPctPlayerLabel_TopOffsetOrg = 33;
@@ -97,6 +104,7 @@ bool gbShowPlaceholder = true;
 bool gbShowAnon = true;
 bool gbShowSight = true;
 bool gbShowTargetInfo = true;
+bool gbShowTrueName = false;
 
 DWORD orgTargetWindStyle = 0;
 
@@ -308,6 +316,12 @@ void CleanUp()
 		InfoLabel = nullptr;
 	}
 
+	if (NameLabel)
+	{
+		NameLabel->Destroy();
+		NameLabel = nullptr;
+	}
+
 	if (DistanceLabel)
 	{
 		DistanceLabel->Destroy();
@@ -421,6 +435,7 @@ void HandleINI(eINIOptions Operation)
 		//Global settings
 		gbShowDistance = GetPrivateProfileBool(szSettingINISection, "ShowDistance", gbShowDistance, INIFileName);
 		gbShowTargetInfo = GetPrivateProfileBool(szSettingINISection, "ShowTargetInfo", gbShowTargetInfo, INIFileName);
+		gbShowTrueName = GetPrivateProfileBool(szSettingINISection, "ShowTrueName", gbShowTrueName, INIFileName);
 		gbShowPlaceholder = GetPrivateProfileBool(szSettingINISection, "ShowPlaceholder", gbShowPlaceholder, INIFileName);
 		gbShowAnon = GetPrivateProfileBool(szSettingINISection, "ShowAnon", gbShowAnon, INIFileName);
 		gbShowSight = GetPrivateProfileBool(szSettingINISection, "ShowSight", gbShowSight, INIFileName);
@@ -455,7 +470,10 @@ void HandleINI(eINIOptions Operation)
 		TargetDistanceLoc = GetPrivateProfileString(strUISection, "TargetDistanceLoc", TargetDistanceLoc, INIFileName);
 		TargetInfoLoc = GetPrivateProfileString(strUISection, "TargetInfoLoc", TargetInfoLoc, INIFileName);
 		TargetInfoColor = ParseColorString(TargetInfoColor, GetPrivateProfileString(strUISection, "TargetInfoColor", "0,255,0", INIFileName));
+		TargetTrueNameLoc = GetPrivateProfileString(strUISection, "TargetTrueNameLoc", TargetTrueNameLoc, INIFileName);
+		TargetTrueNameColor = ParseColorString(TargetTrueNameColor, GetPrivateProfileString(strUISection, "TargetTrueNameColor", "0,255,0", INIFileName));
 		CanSeeIndicatorLoc = GetPrivateProfileString(strUISection, "CanSeeIndicatorLoc", CanSeeIndicatorLoc, INIFileName);
+		PHButtonLoc = GetPrivateProfileString(strUISection, "PHButtonLoc", PHButtonLoc, INIFileName);
 		TargetMeleeRngColor = ParseColorString(TargetMeleeRngColor, GetPrivateProfileString(strUISection, "TargetMeleeRngColor", "0,0,255", INIFileName));
 		TargetDistanceShort = GetPrivateProfileInt(strUISection, "TargetDistanceShort", TargetDistanceShort, INIFileName);
 		TargetSpellRngColor = ParseColorString(TargetSpellRngColor, GetPrivateProfileString(strUISection, "TargetSpellRngColor", "0,255,0", INIFileName));
@@ -472,6 +490,7 @@ void HandleINI(eINIOptions Operation)
 
 		WritePrivateProfileBool(szSettingINISection, "ShowDistance", gbShowDistance, INIFileName);
 		WritePrivateProfileBool(szSettingINISection, "ShowTargetInfo", gbShowTargetInfo, INIFileName);
+		WritePrivateProfileBool(szSettingINISection, "ShowTrueName", gbShowTrueName, INIFileName);
 		WritePrivateProfileBool(szSettingINISection, "ShowPlaceholder", gbShowPlaceholder, INIFileName);
 		WritePrivateProfileBool(szSettingINISection, "ShowAnon", gbShowAnon, INIFileName);
 		WritePrivateProfileBool(szSettingINISection, "ShowSight", gbShowSight, INIFileName);
@@ -488,7 +507,10 @@ void HandleINI(eINIOptions Operation)
 		WritePrivateProfileString(strUISection, "TargetDistanceLoc", TargetDistanceLoc, INIFileName);
 		WritePrivateProfileString(strUISection, "TargetInfoLoc", TargetInfoLoc, INIFileName);
 		WritePrivateProfileString(strUISection, "TargetInfoColor", FormatColorString(TargetInfoColor), INIFileName);
+		WritePrivateProfileString(strUISection, "TargetTrueNameLoc", TargetTrueNameLoc, INIFileName);
+		WritePrivateProfileString(strUISection, "TargetTrueNameColor", FormatColorString(TargetTrueNameColor), INIFileName);
 		WritePrivateProfileString(strUISection, "CanSeeIndicatorLoc", CanSeeIndicatorLoc, INIFileName);
+		WritePrivateProfileString(strUISection, "PHButtonLoc", PHButtonLoc, INIFileName);
 		WritePrivateProfileString(strUISection, "TargetMeleeRngColor", FormatColorString(TargetMeleeRngColor), INIFileName);
 		WritePrivateProfileInt(strUISection, "TargetDistanceShort", TargetDistanceShort, INIFileName);
 		WritePrivateProfileString(strUISection, "TargetSpellRngColor", FormatColorString(TargetSpellRngColor), INIFileName);
@@ -619,6 +641,40 @@ void Initialize()
 				InfoLabel->SetTooltip(szTargetInfo);
 			}
 
+			// create the true name label
+			if (NameLabel = (CLabelWnd*)pSidlMgr->CreateXWndFromTemplate(pTargetWnd, DistLabelTemplate))
+			{
+				if (TargetInfoAnchoredToRight)
+				{
+					NameLabel->SetRightAnchoredToLeft(true);
+					NameLabel->SetLeftAnchoredToLeft(false);
+				}
+				else
+				{
+					NameLabel->SetRightAnchoredToLeft(false);
+					NameLabel->SetLeftAnchoredToLeft(true);
+				}
+
+				NameLabel->SetVisible(true);
+				NameLabel->SetUseInLayoutVertical(true);
+				NameLabel->SetWindowStyle(WSF_AUTOSTRETCHH | WSF_TRANSPARENT | WSF_AUTOSTRETCHV | WSF_RELATIVERECT);
+				NameLabel->SetClipToParent(true);
+				NameLabel->SetUseInLayoutHorizontal(true);
+				NameLabel->bAlignCenter = false;
+				NameLabel->bAlignRight = false;
+
+				const CXRect rectName = GetCXRectTBLRFromString(TargetTrueNameLoc, 47, 61, 0, 40);
+
+				NameLabel->SetTopOffset(rectName.top);
+				NameLabel->SetBottomOffset(rectName.bottom);
+				NameLabel->SetLeftOffset(rectName.left);
+				NameLabel->SetRightOffset(rectName.right);
+
+				NameLabel->SetCRNormal(TargetTrueNameColor);
+				NameLabel->SetBGColor(MQColor(255, 255, 255));
+				NameLabel->SetTooltip(szTrueName);
+			}
+
 			DistanceLabel = CreateDistLabel(pTargetWnd, DistLabelTemplate,"Target_DistLabel", 2, GetCXRectTBLRFromString(TargetDistanceLoc, 34, 48, 90, 0), true, gbShowDistance);
 
 			//create can see label
@@ -652,6 +708,8 @@ void Initialize()
 
 			// create PHButton
 			PHButtonTemplate->nFont = 0;
+			const CXRect rectPHButton = GetCXRectTBLRFromString(PHButtonLoc, 48, 59, 0, 0);
+
 			if (PHButton = (CButtonWnd*)pSidlMgr->CreateXWndFromTemplate(pTargetWnd, PHButtonTemplate))
 			{
 				PHButton->SetVisible(false);
@@ -659,12 +717,12 @@ void Initialize()
 				PHButton->SetLeftAnchoredToLeft(true);
 				PHButton->SetRightAnchoredToLeft(false);
 				PHButton->SetTopAnchoredToTop(true);
-				PHButton->SetTopOffset(rectCanSee.top + 1);
-				PHButton->SetBottomOffset(dTopOffset - 1);
-				PHButton->SetLeftOffset(0);
-				PHButton->SetRightOffset(0);
+				PHButton->SetTopOffset(rectPHButton.top);
+				PHButton->SetBottomOffset(rectPHButton.bottom);
+				PHButton->SetLeftOffset(rectPHButton.left);
+				PHButton->SetRightOffset(rectPHButton.right);
 				// left top right bottom
-				PHButton->SetLocation({ 2, rectCanSee.top + 1, 20, PHButton->GetBottomOffset() });
+				PHButton->SetLocation({ rectPHButton.left + 2, rectPHButton.top, rectPHButton.right + 20, rectPHButton.bottom });
 
 				PHButton->SetCRNormal(0xFF00FFFF); // cyan
 				PHButton->SetBGColor(0xFFFFFFFF);
@@ -704,6 +762,7 @@ void ShowHelp()
 	WriteChatf("     \ay/targetinfo perchar [%sOn\ay|%sOff\ay]\aw will toggle splitting settings by character.", gbUsePerCharSettings ? "\ag" : "", gbUsePerCharSettings ? "" : "\ag");
 	WriteChatf("     \ay/targetinfo distance [%sOn\ay|%sOff\ay]\aw will toggle showing distance to target.", gbShowDistance ? "\ag" : "", gbShowDistance ? "" : "\ag");
 	WriteChatf("     \ay/targetinfo info [%sOn\ay|%sOff\ay]\aw will toggle showing detailed target info.", gbShowTargetInfo ? "\ag" : "", gbShowTargetInfo ? "" : "\ag");
+	WriteChatf("     \ay/targetinfo name [%sOn\ay|%sOff\ay]\aw will toggle showing target true name.", gbShowTrueName ? "\ag" : "", gbShowTrueName ? "" : "\ag");
 	WriteChatf("     \ay/targetinfo placeholder [%sOn\ay|%sOff\ay]\aw will toggle showing placeholder/named info.", gbShowPlaceholder ? "\ag" : "", gbShowPlaceholder ? "" : "\ag");
 	WriteChatf("     \ay/targetinfo anon [%sOn\ay|%sOff\ay]\aw will toggle showing anon/roleplaying in the target display.", gbShowAnon ? "\ag" : "", gbShowAnon ? "" : "\ag");
 	WriteChatf("     \ay/targetinfo sight [%sOn\ay|%sOff\ay]\aw will toggle showing O/X based on your line of sight to target.", gbShowSight ? "\ag" : "", gbShowSight ? "" : "\ag");
@@ -722,47 +781,62 @@ void CMD_TargetInfo(SPAWNINFO* pPlayer, char* szLine)
 	{
 		GetArg(szArg1, szLine, 2);
 		gbUsePerCharSettings = GetBoolFromString(szArg1, !gbUsePerCharSettings);
+		WriteChatf("\awSplitting settings by character is now set to: %s", gbUsePerCharSettings ? "\agOn" : "\agOff");
 		WriteIni = true;
 	}
 	else if (ci_equals(szArg1, "distance"))
 	{
 		GetArg(szArg1, szLine, 2);
 		gbShowDistance = GetBoolFromString(szArg1, !gbShowDistance);
+		WriteChatf("\awShowing distance to target is now set to: %s", gbShowDistance ? "\agOn" : "\agOff");
 		WriteIni = true;
 	}
 	else if (ci_equals(szArg1, "info"))
 	{
 		GetArg(szArg1, szLine, 2);
 		gbShowTargetInfo = GetBoolFromString(szArg1, !gbShowTargetInfo);
+		WriteChatf("\awShowing detailed target info is now set to: %s", gbShowTargetInfo ? "\agOn" : "\agOff");
+		WriteIni = true;
+	}
+	else if (ci_equals(szArg1, "name"))
+	{
+		GetArg(szArg1, szLine, 2);
+		gbShowTrueName = GetBoolFromString(szArg1, !gbShowTrueName);
+		WriteChatf("\awShowing true name is now set to: %s", gbShowTrueName ? "\agOn" : "\agOff");
 		WriteIni = true;
 	}
 	else if (ci_equals(szArg1, "placeholder"))
 	{
 		GetArg(szArg1, szLine, 2);
 		gbShowPlaceholder = GetBoolFromString(szArg1, !gbShowPlaceholder);
+		WriteChatf("\awShowing placeholder/named is now set to: %s", gbShowPlaceholder ? "\agOn" : "\agOff");
 		WriteIni = true;
 	}
 	else if (ci_equals(szArg1, "anon"))
 	{
 		GetArg(szArg1, szLine, 2);
 		gbShowAnon = GetBoolFromString(szArg1, !gbShowAnon);
+		WriteChatf("\awShowing anon/roleplaying in the target display is now set to: %s", gbShowAnon ? "\agOn" : "\agOff");
 		WriteIni = true;
 	}
 	else if (ci_equals(szArg1, "sight"))
 	{
 		GetArg(szArg1, szLine, 2);
 		gbShowSight = GetBoolFromString(szArg1, !gbShowSight);
+		WriteChatf("\awShowing O/X based on your line of sight to target is now set to: %s", gbShowSight ? "\agOn" : "\agOff");
 		WriteIni = true;
 	}
 	else if (ci_equals(szArg1, "reset"))
 	{
 		UnpackIni();
 		CleanUp();
+		WriteChatf("\arAll settings have been reset to default");
 		Initialized=false;
 	}
 	else if (ci_equals(szArg1, "reload"))
 	{
 		CleanUp();
+		WriteChatf("\awReloading \agMQ2TargetInfo\aw.....");
 		Initialized=false;
 	}
 	else
@@ -846,10 +920,11 @@ PLUGIN_API void OnPulse()
 		if (pTargetWnd && pTargetWnd->IsVisible())
 		{
 			Initialize();
-			if (InfoLabel && DistanceLabel && CanSeeLabel && PHButton)
+			if (InfoLabel && NameLabel && DistanceLabel && CanSeeLabel && PHButton)
 			{
 				if (pTarget)
 				{
+					// PH box
 					if (gbShowPlaceholder)
 					{
 						if (oldspawn != pTarget)
@@ -875,6 +950,7 @@ PLUGIN_API void OnPulse()
 
 					char szTargetDist[EQ_MAX_NAME] = { 0 };
 
+					// target info
 					if (gbShowTargetInfo)
 					{
 						switch (pTarget->Anon)
@@ -907,6 +983,15 @@ PLUGIN_API void OnPulse()
 						InfoLabel->SetWindowText(szTargetDist);
 					}
 					InfoLabel->SetVisible(gbShowTargetInfo);
+
+					// target true name
+					if (gbShowTrueName)
+					{
+						sprintf_s(szTargetDist, "%s", pTarget->Name);
+
+						NameLabel->SetWindowText(szTargetDist);
+					}
+					NameLabel->SetVisible(gbShowTrueName);
 
 					// then distance
 					if(gbShowDistance)
@@ -957,6 +1042,7 @@ PLUGIN_API void OnPulse()
 				else
 				{
 					InfoLabel->SetWindowText(CXStr());
+					NameLabel->SetWindowText(CXStr());
 					DistanceLabel->SetWindowText(CXStr());
 					CanSeeLabel->SetWindowText(CXStr());
 					PHButton->SetVisible(false);
