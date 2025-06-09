@@ -16,7 +16,7 @@
 // 2.1 Added enums for menu and go to menu item
 // 2.2 Added fix from dannuic/knightly to stop clearing target when using hotbuttons.
 // 2.3 Added a fix for stopping movement by Freezerburn26
-// 2.4 FelisMalum: Moved allot of configuration to INI + added some additional, added distance variables/color, updated INI.
+// 2.4 FelisMalum: Moved allot of configuration to INI + added some additional, added distance variables/color, updated INI. 1/16/25
 // 2.5 FelisMalum: Added true name element & settings. Moved PHButton loc settings to INI. Added feedback when changing settings.
 
 // TODO: Update for zone checking since the info is in the file (requires switching storage or map key)
